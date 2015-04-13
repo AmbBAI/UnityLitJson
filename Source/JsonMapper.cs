@@ -92,6 +92,9 @@ public class JsonMapper {
 
 	private static readonly IDictionary<Type, ObjectMetadata> objectMetadata;
 
+	public static bool exporterEnabled = true;
+	public static bool importerEnabled = true;
+
 	static JsonMapper() {
 		maxNestingDepth = 100;
 		datetimeFormat = DateTimeFormatInfo.InvariantInfo;
@@ -110,6 +113,9 @@ public class JsonMapper {
 
 		RegisterBaseExporters();
 		RegisterBaseImporters();
+
+		exporterEnabled = true;
+		importerEnabled = true;
 	}
 
 	private static ArrayMetadata AddArrayMetadata(Type type) {
@@ -275,7 +281,8 @@ public class JsonMapper {
 	}
 
 	private static ImporterFunc GetImporter(Type jsonType, Type valueType) {
-		if (customImportTable.ContainsKey(jsonType) &&
+		if (importerEnabled &&
+			customImportTable.ContainsKey(jsonType) &&
 			customImportTable[jsonType].ContainsKey(valueType)) {
 
 			return customImportTable[jsonType][valueType];
@@ -289,7 +296,8 @@ public class JsonMapper {
 	}
 
 	private static ExporterFunc GetExporter(Type valueType) {
-		if (customExportTable.ContainsKey(valueType)) {
+		if (exporterEnabled &&
+			customExportTable.ContainsKey(valueType)) {
 			return customExportTable[valueType];
 		}
 		if (baseExportTable.ContainsKey(valueType)) {
@@ -364,7 +372,14 @@ public class JsonMapper {
 			IList list;
 			Type elemType;
 			if (!tdata.IsArray) {
-				list = (IList)CreateInstance(instType);
+				if (instType == typeof(JsonData))
+				{
+					JsonData data = (JsonData)CreateInstance(instType);
+					data.SetJsonType(JsonType.Array);
+					list = (IList)data;
+				}
+				else list = (IList)CreateInstance(instType);
+				
 				elemType = tdata.ElementType;
 			} else {
 				//list = new ArrayList();
@@ -646,6 +661,8 @@ public class JsonMapper {
 		if (obj is Array) {
 			writer.WriteArrayStart();
 			Array arr = (Array)obj;
+
+#if !UNITY_IPHONE
 			Type elemType = arr.GetType().GetElementType();
 			foreach (object elem in arr) {
 				// if the collection contains polymorphic elements, we need to include type information for deserialization
@@ -657,15 +674,23 @@ public class JsonMapper {
 					WriteValue(elem, writer, privateWriter, depth + 1);
 					writer.WriteObjectEnd();
 				} else {
-					WriteValue(elem, writer, privateWriter, depth + 1);    
+					WriteValue(elem, writer, privateWriter, depth + 1);
 				}
 			}
+#else
+			foreach (object elem in arr) {
+				WriteValue(elem, writer, privateWriter, depth + 1);
+			}
+#endif
+
 			writer.WriteArrayEnd();
 			return;
 		}
 		if (obj is IList) {
 			writer.WriteArrayStart();
 			IList list = (IList)obj;
+
+#if !UNITY_IPHONE
 			// collection might be non-generic type like Arraylist
 			Type elemType = typeof(object);
 			if (list.GetType().GetGenericArguments().Length > 0) {
@@ -685,12 +710,20 @@ public class JsonMapper {
 					WriteValue(elem, writer, privateWriter, depth + 1);    
 				}
 			}
+#else
+			foreach (object elem in list) {
+				WriteValue(elem, writer, privateWriter, depth + 1);    
+			}
+#endif
+
 			writer.WriteArrayEnd();
 			return;
 		}
 		if (obj is IDictionary) {
 			writer.WriteObjectStart();
 			IDictionary dict = (IDictionary)obj;
+
+#if !UNITY_IPHONE
 			// collection might be non-generic type like Hashtable
 			Type elemType = typeof(object);
 			if (dict.GetType().GetGenericArguments().Length > 1) {
@@ -711,6 +744,13 @@ public class JsonMapper {
 					WriteValue(entry.Value, writer, privateWriter, depth + 1);
 				}
 			}
+#else
+			foreach (DictionaryEntry entry in dict) {
+				writer.WritePropertyName((string)entry.Key);
+				WriteValue(entry.Value, writer, privateWriter, depth + 1);
+			}
+#endif
+
 			writer.WriteObjectEnd();
 			return;
 		}
